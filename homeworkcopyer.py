@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from streamlit_gsheets import GSheetsConnection  # ดึงปลั๊กอินเข้ามาให้รู้จักตั้งแต่เริ่ม
 
 # --- 🎨 1. ตั้งค่าหน้าตาแอปให้ใหญ่พิเศษ (Extra Large GUI) ---
 st.set_page_config(page_title="HomeworkCopyer - Python Hub", page_icon="💻", layout="wide")
@@ -29,12 +30,8 @@ st.markdown("""
 # 📊 [ ระบบฐานข้อมูลเชื่อมต่อไปยัง Google Sheets ]
 # =======================================================
 
-try:
-    from streamlit_gsheets import GSheetsConnection
-
-    conn = st.connection("gsheets", type=GSheetsConnection)
-except:
-    conn = st.connection("gsheets", type=GSheetsConnection)
+# เปิดระบบเชื่อมต่ออย่างปลอดภัย
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 try:
     sheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
@@ -48,7 +45,6 @@ def load_posts_from_sheets():
         return [
             {"author": "Poor_dev (Admin)", "content": "ใบงานที่ 1: ระบบยังไม่ได้เชื่อมต่อ Google Sheets บนคลาวด์จ้า"}]
     try:
-        # อ่านข้อมูลและเคลียร์ค่าว่าง (ล้างข้อมูลขยะ)
         df = conn.read(spreadsheet=sheet_url, ttl="0")
         df = df.dropna(subset=['author', 'content'], how='all')  # ลบแถวที่ว่างเปล่าออก
         df = df.fillna("")  # เปลี่ยนค่าที่เป็น NaN ให้เป็นข้อความว่างธรรมดา จะได้ไม่บั๊ก
@@ -64,7 +60,6 @@ def save_post_to_sheets(author, content):
     if sheet_url != "":
         try:
             df = conn.read(spreadsheet=sheet_url, ttl="0")
-            # บังคับให้ข้อมูลเป็น String ป้องกันการเพี้ยน
             new_row = pd.DataFrame([{"author": str(author), "content": str(content)}])
             updated_df = pd.concat([df, new_row], ignore_index=True)
             conn.update(spreadsheet=sheet_url, data=updated_df)
@@ -145,17 +140,15 @@ if menu_selection == "🐍 Python วิชาคอม ม.2":
 
     st.write("---")
 
-    # --- ส่วนที่ 4.2: ดึงข้อมูลจากแผ่นงานมาแสดงบนหน้าฟีด (แก้ไขโค้ดบล็อกนี้ให้ปลอดภัยจากบั๊ก) ---
+    # --- ส่วนที่ 4.2: ดึงข้อมูลจากแผ่นงานมาแสดงบนหน้าฟีด ---
     st.subheader("📌 กระดานแนวทางการบ้านล่าสุด")
 
     all_posts = load_posts_from_sheets()
 
     for post in all_posts:
-        # ดึงค่ามาตรวจสอบอย่างละเอียด ป้องกันการเกิดค่าว่างตัวหนาหาย
         author_val = str(post.get('author', '')).strip()
         content_val = str(post.get('content', '')).strip()
 
-        # แสดงผลเฉพาะโพสต์ที่มีข้อมูลจริงๆ เท่านั้น
         if author_val or content_val:
             if author_val == "":
                 author_val = "ไม่ระบุชื่อ"
