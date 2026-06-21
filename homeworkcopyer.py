@@ -177,9 +177,9 @@ with st.sidebar:
         st.success("⭐ สถานะ: Admin (Poor_dev.)")
 
     st.write("---")
-    # เพิ่มเมนู ปฏิทินการบ้าน เข้าไปในตัวเลือก
+    # 🔥 ย้าย "📅 ปฏิทินการบ้าน" มาอยู่อันแรกสุดของลิสต์เรียบร้อยแล้วครับ
     menu_selection = st.radio("เลือกเมนู:",
-                              ["🐍 Python วิชาคอม ม.2", "📅 ปฏิทินการบ้าน", "📐 คณิตศาสตร์", "🧪 วิทยาศาสตร์"])
+                              ["📅 ปฏิทินการบ้าน", "🐍 Python วิชาคอม ม.2", "📐 คณิตศาสตร์", "🧪 วิทยาศาสตร์"])
 
     if st.button("🚪 ออกจากระบบ"):
         st.session_state.logged_in = False
@@ -208,7 +208,6 @@ if menu_selection == "📅 ปฏิทินการบ้าน":
     st.title("📅 ปฏิทินแจ้งกำหนดส่งการบ้าน")
     st.write("ระบบบันทึกและดูวันครบกำหนดส่งงานของทุกวิชา")
 
-    # ส่วนบันทึกข้อมูลการบ้านใหม่
     with st.container():
         st.subheader("➕ เพิ่มกำหนดส่งการบ้านใหม่")
         col_d, col_s = st.columns([1, 1])
@@ -229,7 +228,6 @@ if menu_selection == "📅 ปฏิทินการบ้าน":
 
     st.write("---")
 
-    # ส่วนแสดงผลรายการการบ้านในปฏิทิน
     st.subheader("📋 รายการส่งการบ้านที่กำลังจะมาถึง (เรียงตามกำหนดส่ง)")
     events = load_cal_events()
 
@@ -237,7 +235,6 @@ if menu_selection == "📅 ปฏิทินการบ้าน":
         st.info("🎉 ตอนนี้ยังไม่มีกำหนดส่งการบ้านใดๆ สบายใจได้!")
     else:
         for ev in events:
-            # แปลงวันที่ให้อ่านง่ายขึ้น
             date_obj = datetime.strptime(ev['due_date'], "%Y-%m-%d")
             formatted_date = date_obj.strftime("%d %B %Y")
 
@@ -250,7 +247,6 @@ if menu_selection == "📅 ปฏิทินการบ้าน":
                     </div>
                 """, unsafe_allow_html=True)
 
-                # ถ้าเป็น Admin ให้ลบกำหนดส่งการบ้านได้
                 if st.session_state.is_admin:
                     if st.button(f"🗑️ ลบงานนี้ [{ev['title']}]", key=f"del_ev_{ev['id']}"):
                         delete_cal_event(ev['id'])
