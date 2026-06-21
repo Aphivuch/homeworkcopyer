@@ -1,6 +1,6 @@
 import streamlit as st
 import sqlite3
-import os
+import base64
 
 # --- 🎨 1. ตั้งค่าหน้าตาแอปให้ใหญ่พิเศษ (Extra Large GUI) ---
 st.set_page_config(page_title="HomeworkCopyer - Python Hub", page_icon="💻", layout="wide")
@@ -23,17 +23,18 @@ st.markdown("""
     }
     .post-author { font-size: 16px; color: #7f8c8d; font-weight: bold; }
     .post-content { font-size: 20px; color: #2c3e50; margin-top: 5px; white-space: pre-wrap; }
+    .post-image { margin-top: 15px; border-radius: 10px; max-width: 100%; height: auto; }
     </style>
 """, unsafe_allow_html=True)
 
 # =======================================================
-# 🗄️ [ ระบบฐานข้อมูล SQLite ของจริงหลังบ้าน - แก้ไขคำสั่ง SQL ]
+# 🗄️ [ ระบบฐานข้อมูล SQLite - เพิ่มคอลัมน์เก็บรูปภาพ ]
 # =======================================================
 DB_NAME = "homework.db"
 
 
 def init_db():
-    """ฟังก์ชันสร้างตารางฐานข้อมูลถ้ายังไม่มี (แก้ไข syntax เรียบร้อย)"""
+    """ฟังก์ชันสร้างตารางฐานข้อมูลและเพิ่มคอลัมน์ภาพ"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute('''
@@ -43,34 +44,37 @@ def init_db():
             content TEXT
         )
     ''')
-    # ตรวจเช็กว่าถ้าไม่มีโพสต์แรก ให้สร้างโพสต์เริ่มต้นของ Admin ไว้ก่อน
-    c.execute("SELECT COUNT(*) FROM posts")
-    if c.fetchone()[0] == 0:
-        c.execute("INSERT INTO posts (author, content) VALUES (?, ?)",
-                  ("Poor_dev (Admin)",
-                   "ใบงานที่ 1: โค้ดคำนวณพื้นที่สี่เหลี่ยม\n\nwidth = int(input())\nlength = int(input())\nprint('พื้นที่คือ:', width * length)"))
+
+    # ตรวจสอบและเพิ่มคอลัมน์ image_base64 เข้าไปในตารางเดิมอย่างปลอดภัย
+    try:
+        c.execute("ALTER TABLE posts ADD COLUMN image_base64 TEXT")
+    except sqlite3.OperationalError:
+        # ถ้ามีคอลัมน์นี้อยู่แล้วจะไม่ทำอะไรข้ามไปเลย
+        pass
+
     conn.commit()
     conn.close()
 
 
 def load_posts_from_db():
-    """ดึงข้อมูลโพสต์ทั้งหมดเรียงจากใหม่สุดไปเก่าสุด"""
+    """ดึงข้อมูลโพสต์และรูปภาพทั้งหมด"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute("SELECT author, content FROM posts ORDER BY id DESC")
+    c.execute("SELECT author, content, image_base64 FROM posts ORDER BY id DESC")
     rows = c.fetchall()
     conn.close()
 
-    posts = [{"author": row[0], "content": row[1]} for row in rows]
+    posts = [{"author": row[0], "content": row[1], "image": row[2]} for row in rows]
     return posts
 
 
-def save_post_to_db(author, content):
-    """บันทึกโพสต์ใหม่ลงฐานข้อมูลถาวร"""
+def save_post_to_db(author, content, image_encoded=None):
+    """บันทึกโพสต์พร้อมรหัสรูปภาพลงฐานข้อมูล"""
     try:
         conn = sqlite3.connect(DB_NAME)
         c = conn.cursor()
-        c.execute("INSERT INTO posts (author, content) VALUES (?, ?)", (author, content))
+        c.execute("INSERT INTO posts (author, content, image_base64) VALUES (?, ?, ?)",
+                  (author, content, image_encoded))
         conn.commit()
         conn.close()
         return True
@@ -78,7 +82,7 @@ def save_post_to_db(author, content):
         return False
 
 
-# เรียกใช้งานฐานข้อมูลให้พร้อมทำงาน
+# เรียกใช้งานฐานข้อมูลให้พร้อมระบบใหม่
 init_db()
 
 # --- 🕹️ 2. ระบบความจำชั่วคราวสำหรับตัวบุคคล (Session State) ---
@@ -136,25 +140,36 @@ if menu_selection == "🐍 Python วิชาคอม ม.2":
     st.write("พื้นที่สำหรับแชร์ซอร์สโค้ดและแนวทางการบ้านวิชาคอมพิวเตอร์ ม.2")
     st.write("---")
 
-    # --- ส่วนที่ 4.1: กล่องสำหรับสร้างโพสต์ใหม่ ---
+    # --- ส่วนที่ 4.1: กล่องสำหรับสร้างโพสต์ใหม่และอัปโหลดรูปภาพ ---
     st.subheader("➕ แชร์ข้อความการบ้าน/โค้ดอันใหม่")
-    new_post = st.text_area("พิมพ์ข้อความ หรือ วางโค้ด Python ที่นี่เลยคุณเดฟ:", height=150,
+    new_post = st.text_area("พิมพ์ข้อความ หรือ วางโค้ด Python ที่นี่เลยคุณเดฟ:", height=120,
                             placeholder="พิมพ์โจทย์และแนวทางลงตรงนี้...")
 
+    # 📸 ช่องอัปโหลดรูปภาพ รองรับ png, jpg, jpeg
+    uploaded_file = st.file_uploader("🖼️ แนบรูปภาพประกอบการบ้าน (ถ้ามี):", type=["png", "jpg", "jpeg"])
+
     if st.button("📢 กดโพสต์ลงฟีดกระดานดำ", use_container_width=True):
-        if new_post.strip() != "":
-            success = save_post_to_db(st.session_state.username, new_post)
+        # โพสต์ได้ถ้ามีข้อความ หรือมีรูปภาพอย่างใดอย่างหนึ่ง
+        if new_post.strip() != "" or uploaded_file is not None:
+
+            image_encoded = None
+            # ถ้าผู้ใช้อัปโหลดรูปมา -> แปลงรูปเป็นรหัสข้อความ Base64
+            if uploaded_file is not None:
+                file_bytes = uploaded_file.read()
+                image_encoded = base64.b64encode(file_bytes).decode("utf-8")
+
+            success = save_post_to_db(st.session_state.username, new_post, image_encoded)
             if success:
                 st.success("โพสต์เซฟลงระบบฐานข้อมูลสำเร็จแล้ว!")
                 st.rerun()
             else:
                 st.error("เกิดข้อผิดพลาดในการบันทึกข้อมูลหลังบ้าน")
         else:
-            st.warning("พิมพ์ข้อความก่อนกดโพสต์นะ!")
+            st.warning("กรุณาพิมพ์ข้อความหรือแนบรูปภาพก่อนกดโพสต์นะ!")
 
     st.write("---")
 
-    # --- ส่วนที่ 4.2: ดึงข้อมูลจากฐานข้อมูล SQLite มาแสดงผลบนหน้าฟีด ---
+    # --- ส่วนที่ 4.2: แสดงผลฟีดข่าวสารพร้อมรูปภาพ ---
     st.subheader("📌 กระดานแนวทางการบ้านล่าสุด")
 
     all_posts = load_posts_from_db()
@@ -163,12 +178,21 @@ if menu_selection == "🐍 Python วิชาคอม ม.2":
         st.info("📌 ยังไม่มีใครโพสต์แนวทางการบ้านเลย คุณเดฟเจิมเป็นคนแรกได้นะ!")
     else:
         for post in all_posts:
+            author_val = post['author'] if post['author'] else "ไม่ระบุชื่อ"
+            content_val = post['content']
+            img_val = post['image']
+
+            # 1. แสดงกล่องข้อความโพสต์
             st.markdown(f"""
                 <div class="post-card">
-                    <div class="post-author">👤 โพสต์โดย: {post['author']}</div>
-                    <div class="post-content">{post['content']}</div>
+                    <div class="post-author">👤 โพสต์โดย: {author_val}</div>
+                    <div class="post-content">{content_val}</div>
                 </div>
             """, unsafe_allow_html=True)
+
+            # 2. ถ้าโพสต์นั้นมีรูปภาพ ให้แปลงรหัสกลับมาเป็นรูปภาพแสดงผลต่อท้ายทันที
+            if img_val:
+                st.image(f"data:image/png;base64,{img_val}", use_container_width=True)
 
 else:
     st.title(menu_selection)
