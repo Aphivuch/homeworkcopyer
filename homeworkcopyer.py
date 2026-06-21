@@ -1,6 +1,6 @@
 import streamlit as st
-import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+import sqlite3
+import os
 
 # --- 🎨 1. ตั้งค่าหน้าตาแอปให้ใหญ่พิเศษ (Extra Large GUI) ---
 st.set_page_config(page_title="HomeworkCopyer - Python Hub", page_icon="💻", layout="wide")
@@ -27,64 +27,60 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =======================================================
-# 📊 [ ระบบฐานข้อมูลเชื่อมต่อไปยัง Google Sheets ]
+# 🗄️ [ ระบบฐานข้อมูล SQLite ของจริงหลังบ้าน - เสถียร 100% ]
 # =======================================================
-
-# สร้างตัวเชื่อมต่อหลัก
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-try:
-    sheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
-except:
-    sheet_url = ""
+DB_NAME = "homework.db"
 
 
-# ฟังก์ชันสำหรับอ่านข้อมูลจาก Google Sheets
-def load_posts_from_sheets():
-    if sheet_url == "":
-        return [
-            {"author": "Poor_dev (Admin)", "content": "ใบงานที่ 1: ระบบยังไม่ได้เชื่อมต่อ Google Sheets บนคลาวด์จ้า"}]
+def init_db():
+    """ฟังก์ชันสร้างตารางฐานข้อมูลถ้ายังไม่มี"""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            author TEXT NOT EXISTS,
+            content TEXT NOT EXISTS
+        )
+    ''')
+    # ตรวจเช็กว่าถ้าไม่มีโพสต์แรก ให้สร้างโพสต์เริ่มต้นของ Admin ไว้ก่อน
+    c.execute("SELECT COUNT(*) FROM posts")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO posts (author, content) VALUES (?, ?)",
+                  ("Poor_dev (Admin)",
+                   "ใบงานที่ 1: โค้ดคำนวณพื้นที่สี่เหลี่ยม\n\nwidth = int(input())\nlength = int(input())\nprint('พื้นที่คือ:', width * length)"))
+    conn.commit()
+    conn.close()
+
+
+def load_posts_from_db():
+    """ดึงข้อมูลโพสต์ทั้งหมดเรียงจากใหม่สุดไปเก่าสุด"""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT author, content FROM posts ORDER BY id DESC")
+    rows = c.fetchall()
+    conn.close()
+
+    # แปลงข้อมูลจาก tuple ให้กลายเป็น list ของ dict เพื่อให้ทำงานง่าย
+    posts = [{"author": row[0], "content": row[1]} for row in rows]
+    return posts
+
+
+def save_post_to_db(author, content):
+    """บันทึกโพสต์ใหม่ลงฐานข้อมูลถาวร"""
     try:
-        # อ่านข้อมูลสดใหม่ทุกครั้ง (ttl="0" เพื่อไม่ให้จำค่าแคชเก่าค้างไว้)
-        df = conn.read(spreadsheet=sheet_url, ttl="0")
-
-        # ตรวจสอบว่าตารางว่างเปล่าหรือไม่
-        if df.empty:
-            return []
-
-        df = df.dropna(subset=['author', 'content'], how='all')  # ลบแถวว่าง
-        df = df.fillna("")  # แปลงค่า NaN เป็นข้อความว่าง
-
-        posts = df.to_dict(orient="records")
-        return posts[::-1]  # เรียงจากโพสต์ล่าสุดขึ้นก่อน
-    except Exception as e:
-        return [{"author": "Poor_dev (Admin)", "content": f"เกิดข้อผิดพลาดในการโหลดข้อมูล: {e}"}]
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute("INSERT INTO posts (author, content) VALUES (?, ?)", (author, content))
+        conn.commit()
+        conn.close()
+        return True
+    except:
+        return False
 
 
-# ฟังก์ชันเพิ่มข้อมูลลงตาราง (ปรับปรุงใหม่เพื่อแก้บั๊ก Running ค้าง)
-def save_post_to_sheets(author, content):
-    if sheet_url != "":
-        try:
-            # 1. ดึงข้อมูลตารางชุดปัจจุบันออกมาก่อน
-            df = conn.read(spreadsheet=sheet_url, ttl="0")
-
-            # 2. สร้างแถวข้อมูลใหม่
-            new_row = pd.DataFrame([{"author": str(author), "content": str(content)}])
-
-            # 3. นำข้อมูลใหม่ไปต่อท้ายตารางเดิม
-            if df.empty:
-                updated_df = new_row
-            else:
-                updated_df = pd.concat([df, new_row], ignore_index=True)
-
-            # 4. อัปเดตข้อมูลกลับไปยัง Google Sheets ของจริงถาวร
-            conn.update(spreadsheet=sheet_url, data=updated_df)
-            return True
-        except Exception as e:
-            st.error(f"เซฟลงแผ่นงานไม่สำเร็จ: {e}")
-            return False
-    return False
-
+# เรียกใช้งานฐานข้อมูลให้พร้อมทำงาน
+init_db()
 
 # --- 🕹️ 2. ระบบความจำชั่วคราวสำหรับตัวบุคคล (Session State) ---
 if "logged_in" not in st.session_state:
@@ -148,41 +144,32 @@ if menu_selection == "🐍 Python วิชาคอม ม.2":
 
     if st.button("📢 กดโพสต์ลงฟีดกระดานดำ", use_container_width=True):
         if new_post.strip() != "":
-            if sheet_url == "":
-                st.warning("⚠️ โปรแกรมยังรันในโหมดจำลองอยู่ เนื่องจากยังไม่ได้ใส่ลิงก์ Google Sheets จ้า")
+            success = save_post_to_db(st.session_state.username, new_post)
+            if success:
+                st.success("โพสต์เซฟลงระบบฐานข้อมูลสำเร็จแล้ว!")
+                st.rerun()
             else:
-                # เรียกฟังก์ชันเซฟและตรวจเช็กสถานะการทำงาน
-                success = save_post_to_sheets(st.session_state.username, new_post)
-                if success:
-                    st.success("โพสต์เซฟลงระบบคลาวด์ถาวรสำเร็จแล้ว!")
-                    st.rerun()
+                st.error("เกิดข้อผิดพลาดในการบันทึกข้อมูลหลังบ้าน")
         else:
             st.warning("พิมพ์ข้อความก่อนกดโพสต์นะ!")
 
     st.write("---")
 
-    # --- ส่วนที่ 4.2: ดึงข้อมูลจากแผ่นงานมาแสดงบนหน้าฟีด ---
+    # --- ส่วนที่ 4.2: ดึงข้อมูลจากฐานข้อมูล SQLite มาแสดงผลบนหน้าฟีด ---
     st.subheader("📌 กระดานแนวทางการบ้านล่าสุด")
 
-    all_posts = load_posts_from_sheets()
+    all_posts = load_posts_from_db()
 
     if not all_posts:
         st.info("📌 ยังไม่มีใครโพสต์แนวทางการบ้านเลย คุณเดฟเจิมเป็นคนแรกได้นะ!")
     else:
         for post in all_posts:
-            author_val = str(post.get('author', '')).strip()
-            content_val = str(post.get('content', '')).strip()
-
-            if author_val or content_val:
-                if author_val == "":
-                    author_val = "ไม่ระบุชื่อ"
-
-                st.markdown(f"""
-                    <div class="post-card">
-                        <div class="post-author">👤 โพสต์โดย: {author_val}</div>
-                        <div class="post-content">{content_val}</div>
-                    </div>
-                """, unsafe_allow_html=True)
+            st.markdown(f"""
+                <div class="post-card">
+                    <div class="post-author">👤 โพสต์โดย: {post['author']}</div>
+                    <div class="post-content">{post['content']}</div>
+                </div>
+            """, unsafe_allow_html=True)
 
 else:
     st.title(menu_selection)
