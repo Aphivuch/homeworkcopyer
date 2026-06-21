@@ -27,7 +27,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =======================================================
-# 🗄️ [ ระบบฐานข้อมูล SQLite - เพิ่มคอลัมน์ Title ]
+# 🗄️ [ ระบบฐานข้อมูล SQLite - จัดการคอลัมน์ใหม่อัตโนมัติ ]
 # =======================================================
 DB_NAME = "homework.db"
 
@@ -45,7 +45,7 @@ def init_db():
         )
     ''')
 
-    # อัปเกรดฐานข้อมูล: เพิ่มคอลัมน์ title และ image_base64 ถ้ายังไม่มี
+    # ตรวจสอบและอัปเกรดฐานข้อมูลเผื่อตารางเก่าไม่มีคอลัมน์ใหม่
     columns = [row[1] for row in c.execute("PRAGMA table_info(posts)")]
     if "title" not in columns:
         c.execute("ALTER TABLE posts ADD COLUMN title TEXT")
@@ -79,7 +79,7 @@ def save_post_to_db(author, title, content, image_encoded=None):
 
 
 def delete_post(post_id):
-    """ฟังก์ชันสำหรับ Admin ลบโพสต์"""
+    """ฟังก์ชันสำหรับ Admin ใช้ลบโพสต์"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("DELETE FROM posts WHERE id = ?", (post_id,))
@@ -87,6 +87,7 @@ def delete_post(post_id):
     conn.close()
 
 
+# เรียกใช้ฐานข้อมูล
 init_db()
 
 # --- 🕹️ 2. ระบบความจำ Session ---
@@ -116,12 +117,12 @@ if not st.session_state.logged_in:
     st.stop()
 
 # =======================================================
-# 🗂️ 3. แถบเมนูด้านซ้าย (Sidebar)
+# 🗂️ 3. แถบเมนูด้านซ้าย (Sidebar) + ปุ่มล็อกอิน Admin
 # =======================================================
 with st.sidebar:
     st.markdown(f"### 👋 สวัสดี: **{st.session_state.username}**")
     if st.session_state.is_admin:
-        st.success("⭐ สถานะ: ผู้ดูแลระบบ (Admin)")
+        st.success("⭐ สถานะ: Admin (Poor_dev.)")
 
     st.write("---")
     menu_selection = st.radio("ไปที่วิชา:", ["🐍 Python วิชาคอม ม.2", "📐 คณิตศาสตร์", "🧪 วิทยาศาสตร์"])
@@ -131,15 +132,15 @@ with st.sidebar:
         st.session_state.is_admin = False
         st.rerun()
 
-    # --- 🔐 ส่วน Admin Login (ขวาล่างของแถบเมนู) ---
+    # --- 🔐 กล่องล็อกอิน Admin อยู่ท้ายสุดซ้ายมือ ---
     st.write("---")
-    with st.expander("🛠️ สำหรับ Admin"):
+    with st.expander("🛠️ สำหรับ Admin ล็อกอิน"):
         adm_user = st.text_input("User:")
         adm_pass = st.text_input("Pass:", type="password")
         if st.button("Login Admin"):
             if adm_user == "Poor_dev." and adm_pass == "210356่js":
                 st.session_state.is_admin = True
-                st.success("ล็อกอิน Admin สำเร็จ!")
+                st.success("ล็อกอิน Admin สำเร็จแล้ว!")
                 st.rerun()
             else:
                 st.error("รหัสไม่ถูกต้อง!")
@@ -150,16 +151,16 @@ with st.sidebar:
 if menu_selection == "🐍 Python วิชาคอม ม.2":
     st.title("💻 Python Learning Hub")
 
-    # --- ส่วนที่ 4.1: สร้างโพสต์ใหม่ ---
+    # --- ส่วนที่ 4.1: ช่องสำหรับพิมพ์โพสต์ใหม่ ---
     with st.container():
         st.subheader("➕ แชร์แนวทางการบ้านใหม่")
         col_t, col_i = st.columns([2, 1])
         with col_t:
-            new_title = st.text_input("📌 หัวข้อโพสต์:", placeholder="เช่น แบบฝึกหัดที่ 1, สอบเก็บคะแนน")
+            new_title = st.text_input("📌 หัวข้อโพสต์ (เช่น แบบฝึกหัด1):", placeholder="พิมพ์ชื่อแบบฝึกหัดตรงนี้...")
         with col_i:
-            uploaded_file = st.file_uploader("🖼️ แนบรูปภาพ:", type=["png", "jpg", "jpeg"])
+            uploaded_file = st.file_uploader("🖼️ แนบรูปภาพประกอบ:", type=["png", "jpg", "jpeg"])
 
-        new_post = st.text_area("เนื้อหา/โค้ด Python:", height=100, placeholder="อธิบายแนวทางหรือวางโค้ดที่นี่...")
+        new_post = st.text_area("เนื้อหา/โค้ด Python:", height=100, placeholder="พิมพ์คำอธิบายหรือวางโค้ดลงตรงนี้...")
 
         if st.button("📢 โพสต์ลงกระดาน", use_container_width=True):
             if new_title.strip() != "" and (new_post.strip() != "" or uploaded_file is not None):
@@ -168,27 +169,43 @@ if menu_selection == "🐍 Python วิชาคอม ม.2":
                     image_encoded = base64.b64encode(uploaded_file.read()).decode("utf-8")
 
                 if save_post_to_db(st.session_state.username, new_title, new_post, image_encoded):
-                    st.success("โพสต์เรียบร้อย!")
+                    st.success("โพสต์เซฟลงระบบสำเร็จ!")
                     st.rerun()
             else:
-                st.warning("กรุณาใส่หัวข้อและเนื้อหาด้วยนะ!")
+                st.warning("กรุณากรอก 'หัวข้อโพสต์' และเนื้อหาให้เรียบร้อยก่อนส่งนะจ๊ะ!")
 
     st.write("---")
 
-    # --- ส่วนที่ 4.2: แสดงผลฟีด ---
+    # --- ส่วนที่ 4.2: ดึงข้อมูลจากฟีดมาแสดงผล ---
     st.subheader("📌 รายการการบ้านล่าสุด")
     all_posts = load_posts_from_db()
 
     for post in all_posts:
         with st.container():
-            # ตกแต่งการ์ดโพสต์
+            # แสดงหัวข้อ, ชื่อผู้โพสต์ และเนื้อหา
+            author_val = post['author'] if post['author'] else "ไม่ระบุชื่อ"
+            title_val = post['title'] if post['title'] else "ไม่มีหัวข้อ"
+
             st.markdown(f"""
                 <div class="post-card">
-                    <div class="post-title">📁 {post['title']}</div>
-                    <div class="post-author">👤 โดย: {post['author']}</div>
+                    <div class="post-title">📁 {title_val}</div>
+                    <div class="post-author">👤 โดย: {author_val}</div>
                     <div class="post-content">{post['content']}</div>
                 </div>
             """, unsafe_allow_html=True)
 
+            # (บรรทัดที่แก้บั๊ก) ตรวจเช็กและแสดงรูปภาพอย่างถูกต้องปิดวงเล็บเรียบร้อย!
             if post['image']:
-                st.image(f"data:image/png;base64,{post['image']}", use_container
+                st.image(f"data:image/png;base64,{post['image']}", use_container_width=True)
+
+            # ถ้าแอดมินล็อกอินอยู่ จะมีปุ่มลบโพสต์สีแดงโชว์ขึ้นมาให้กด
+            if st.session_state.is_admin:
+                if st.button(f"🗑️ ลบโพสต์ [{title_val}]", key=f"del_{post['id']}"):
+                    delete_post(post['id'])
+                    st.success("ลบโพสต์เรียบร้อย!")
+                    st.rerun()
+            st.write("---")
+
+else:
+    st.title(menu_selection)
+    st.info("🚧 ระบบส่วนนี้กำลังอยู่ระหว่างการพัฒนาโดย Poor_dev จ้า...")
