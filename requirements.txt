@@ -1,2 +1,2 @@
-st-theme-spreadsheet-connection
 st-gsheets-connection
+pandas
