@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection  # ดึงปลั๊กอินเข้ามาให้รู้จักตั้งแต่เริ่ม
+from streamlit_gsheets import GSheetsConnection
 
 # --- 🎨 1. ตั้งค่าหน้าตาแอปให้ใหญ่พิเศษ (Extra Large GUI) ---
 st.set_page_config(page_title="HomeworkCopyer - Python Hub", page_icon="💻", layout="wide")
@@ -30,7 +30,7 @@ st.markdown("""
 # 📊 [ ระบบฐานข้อมูลเชื่อมต่อไปยัง Google Sheets ]
 # =======================================================
 
-# เปิดระบบเชื่อมต่ออย่างปลอดภัย
+# สร้างตัวเชื่อมต่อหลัก
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 try:
@@ -45,9 +45,15 @@ def load_posts_from_sheets():
         return [
             {"author": "Poor_dev (Admin)", "content": "ใบงานที่ 1: ระบบยังไม่ได้เชื่อมต่อ Google Sheets บนคลาวด์จ้า"}]
     try:
+        # อ่านข้อมูลสดใหม่ทุกครั้ง (ttl="0" เพื่อไม่ให้จำค่าแคชเก่าค้างไว้)
         df = conn.read(spreadsheet=sheet_url, ttl="0")
-        df = df.dropna(subset=['author', 'content'], how='all')  # ลบแถวที่ว่างเปล่าออก
-        df = df.fillna("")  # เปลี่ยนค่าที่เป็น NaN ให้เป็นข้อความว่างธรรมดา จะได้ไม่บั๊ก
+
+        # ตรวจสอบว่าตารางว่างเปล่าหรือไม่
+        if df.empty:
+            return []
+
+        df = df.dropna(subset=['author', 'content'], how='all')  # ลบแถวว่าง
+        df = df.fillna("")  # แปลงค่า NaN เป็นข้อความว่าง
 
         posts = df.to_dict(orient="records")
         return posts[::-1]  # เรียงจากโพสต์ล่าสุดขึ้นก่อน
@@ -55,16 +61,29 @@ def load_posts_from_sheets():
         return [{"author": "Poor_dev (Admin)", "content": f"เกิดข้อผิดพลาดในการโหลดข้อมูล: {e}"}]
 
 
-# ฟังก์ชันเพิ่มข้อมูลลงตาราง
+# ฟังก์ชันเพิ่มข้อมูลลงตาราง (ปรับปรุงใหม่เพื่อแก้บั๊ก Running ค้าง)
 def save_post_to_sheets(author, content):
     if sheet_url != "":
         try:
+            # 1. ดึงข้อมูลตารางชุดปัจจุบันออกมาก่อน
             df = conn.read(spreadsheet=sheet_url, ttl="0")
+
+            # 2. สร้างแถวข้อมูลใหม่
             new_row = pd.DataFrame([{"author": str(author), "content": str(content)}])
-            updated_df = pd.concat([df, new_row], ignore_index=True)
+
+            # 3. นำข้อมูลใหม่ไปต่อท้ายตารางเดิม
+            if df.empty:
+                updated_df = new_row
+            else:
+                updated_df = pd.concat([df, new_row], ignore_index=True)
+
+            # 4. อัปเดตข้อมูลกลับไปยัง Google Sheets ของจริงถาวร
             conn.update(spreadsheet=sheet_url, data=updated_df)
+            return True
         except Exception as e:
             st.error(f"เซฟลงแผ่นงานไม่สำเร็จ: {e}")
+            return False
+    return False
 
 
 # --- 🕹️ 2. ระบบความจำชั่วคราวสำหรับตัวบุคคล (Session State) ---
@@ -132,9 +151,11 @@ if menu_selection == "🐍 Python วิชาคอม ม.2":
             if sheet_url == "":
                 st.warning("⚠️ โปรแกรมยังรันในโหมดจำลองอยู่ เนื่องจากยังไม่ได้ใส่ลิงก์ Google Sheets จ้า")
             else:
-                save_post_to_sheets(st.session_state.username, new_post)
-                st.success("โพสต์เซฟลงระบบคลาวด์ถาวรสำเร็จแล้ว!")
-                st.rerun()
+                # เรียกฟังก์ชันเซฟและตรวจเช็กสถานะการทำงาน
+                success = save_post_to_sheets(st.session_state.username, new_post)
+                if success:
+                    st.success("โพสต์เซฟลงระบบคลาวด์ถาวรสำเร็จแล้ว!")
+                    st.rerun()
         else:
             st.warning("พิมพ์ข้อความก่อนกดโพสต์นะ!")
 
@@ -145,20 +166,23 @@ if menu_selection == "🐍 Python วิชาคอม ม.2":
 
     all_posts = load_posts_from_sheets()
 
-    for post in all_posts:
-        author_val = str(post.get('author', '')).strip()
-        content_val = str(post.get('content', '')).strip()
+    if not all_posts:
+        st.info("📌 ยังไม่มีใครโพสต์แนวทางการบ้านเลย คุณเดฟเจิมเป็นคนแรกได้นะ!")
+    else:
+        for post in all_posts:
+            author_val = str(post.get('author', '')).strip()
+            content_val = str(post.get('content', '')).strip()
 
-        if author_val or content_val:
-            if author_val == "":
-                author_val = "ไม่ระบุชื่อ"
+            if author_val or content_val:
+                if author_val == "":
+                    author_val = "ไม่ระบุชื่อ"
 
-            st.markdown(f"""
-                <div class="post-card">
-                    <div class="post-author">👤 โพสต์โดย: {author_val}</div>
-                    <div class="post-content">{content_val}</div>
-                </div>
-            """, unsafe_allow_html=True)
+                st.markdown(f"""
+                    <div class="post-card">
+                        <div class="post-author">👤 โพสต์โดย: {author_val}</div>
+                        <div class="post-content">{content_val}</div>
+                    </div>
+                """, unsafe_allow_html=True)
 
 else:
     st.title(menu_selection)
