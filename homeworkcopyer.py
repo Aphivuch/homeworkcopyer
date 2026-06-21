@@ -27,20 +27,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =======================================================
-# 🗄️ [ ระบบฐานข้อมูล SQLite ของจริงหลังบ้าน - เสถียร 100% ]
+# 🗄️ [ ระบบฐานข้อมูล SQLite ของจริงหลังบ้าน - แก้ไขคำสั่ง SQL ]
 # =======================================================
 DB_NAME = "homework.db"
 
 
 def init_db():
-    """ฟังก์ชันสร้างตารางฐานข้อมูลถ้ายังไม่มี"""
+    """ฟังก์ชันสร้างตารางฐานข้อมูลถ้ายังไม่มี (แก้ไข syntax เรียบร้อย)"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS posts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            author TEXT NOT EXISTS,
-            content TEXT NOT EXISTS
+            author TEXT,
+            content TEXT
         )
     ''')
     # ตรวจเช็กว่าถ้าไม่มีโพสต์แรก ให้สร้างโพสต์เริ่มต้นของ Admin ไว้ก่อน
@@ -61,7 +61,6 @@ def load_posts_from_db():
     rows = c.fetchall()
     conn.close()
 
-    # แปลงข้อมูลจาก tuple ให้กลายเป็น list ของ dict เพื่อให้ทำงานง่าย
     posts = [{"author": row[0], "content": row[1]} for row in rows]
     return posts
 
