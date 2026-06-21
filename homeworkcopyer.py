@@ -4,7 +4,7 @@ import base64
 from datetime import datetime
 
 # --- 🎨 1. ตั้งค่าหน้าตาแอปให้ใหญ่พิเศษ (Extra Large GUI) ---
-st.set_page_config(page_title="HomeworkCopyer - Admin Edition", page_icon="💻", layout="wide")
+st.set_page_config(page_title="HomeworkCopyer - Full School Edition", page_icon="💻", layout="wide")
 
 st.markdown("""
     <style>
@@ -37,18 +37,30 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =======================================================
-# 🗄️ [ ระบบฐานข้อมูล SQLite ]
+# 🗄️ [ ระบบฐานข้อมูล SQLite - รองรับการแยกรายวิชา ]
 # =======================================================
 DB_NAME = "homework.db"
+# รายชื่อวิชาทั้งหมดในระบบ (แก้ไขตรงนี้ที่เดียวจะอัปเดตทุกจุดอัตโนมัติ)
+ALL_SUBJECTS = [
+    "🐍 Python วิชาคอม ม.2",
+    "📐 คณิตศาสตร์",
+    "🧪 วิทยาศาสตร์",
+    "🇹🇭 ภาษาไทย",
+    "🌍 สังคมศึกษา",
+    "🙏 พระพุทธศาสนา",
+    "📜 ประวัติศาสตร์",
+    "💡 วิชา IS"
+]
 
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    # 1. ตารางโพสต์ปกติ
+    # 1. ตารางโพสต์ปกติ (เพิ่มคอลัมน์ subject เพื่อแยกวิชา)
     c.execute('''
         CREATE TABLE IF NOT EXISTS posts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subject TEXT,
             author TEXT,
             title TEXT,
             content TEXT,
@@ -66,8 +78,10 @@ def init_db():
         )
     ''')
 
-    # ตรวจสอบและอัปเกรดฐานข้อมูลโพสต์เก่า
+    # ตรวจสอบและอัปเกรดโครงสร้างฐานข้อมูลตารางเก่าอัตโนมัติ
     columns = [row[1] for row in c.execute("PRAGMA table_info(posts)")]
+    if "subject" not in columns:
+        c.execute("ALTER TABLE posts ADD COLUMN subject TEXT")
     if "title" not in columns:
         c.execute("ALTER TABLE posts ADD COLUMN title TEXT")
     if "image_base64" not in columns:
@@ -77,22 +91,24 @@ def init_db():
     conn.close()
 
 
-# --- ฟังก์ชันจัดการโพสต์ ---
-def load_posts_from_db():
+# --- ฟังก์ชันจัดการโพสต์แยกตามวิชา ---
+def load_posts_by_subject(subject_name):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute("SELECT id, author, title, content, image_base64 FROM posts ORDER BY id DESC")
+    # ดึงเฉพาะโพสต์ที่ตรงกับวิชาที่ผู้ใช้กดเลือก
+    c.execute("SELECT id, author, title, content, image_base64 FROM posts WHERE subject = ? ORDER BY id DESC",
+              (subject_name,))
     rows = c.fetchall()
     conn.close()
     return [{"id": r[0], "author": r[1], "title": r[2], "content": r[3], "image": r[4]} for r in rows]
 
 
-def save_post_to_db(author, title, content, image_encoded=None):
+def save_post_to_db(subject, author, title, content, image_encoded=None):
     try:
         conn = sqlite3.connect(DB_NAME)
         c = conn.cursor()
-        c.execute("INSERT INTO posts (author, title, content, image_base64) VALUES (?, ?, ?, ?)",
-                  (author, title, content, image_encoded))
+        c.execute("INSERT INTO posts (subject, author, title, content, image_base64) VALUES (?, ?, ?, ?, ?)",
+                  (subject, author, title, content, image_encoded))
         conn.commit()
         conn.close()
         return True
@@ -169,7 +185,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # =======================================================
-# 🗂️ 3. แถบเมนูด้านซ้าย (Sidebar)
+# 🗂️ 3. แถบเมนูด้านซ้าย (Sidebar) - อัปเดตรายชื่อวิชาใหม่ทั้งหมด
 # =======================================================
 with st.sidebar:
     st.markdown(f"### 👋 สวัสดี: **{st.session_state.username}**")
@@ -177,9 +193,9 @@ with st.sidebar:
         st.success("⭐ สถานะ: Admin (Poor_dev.)")
 
     st.write("---")
-    # 🔥 ย้าย "📅 ปฏิทินการบ้าน" มาอยู่อันแรกสุดของลิสต์เรียบร้อยแล้วครับ
-    menu_selection = st.radio("เลือกเมนู:",
-                              ["📅 ปฏิทินการบ้าน", "🐍 Python วิชาคอม ม.2", "📐 คณิตศาสตร์", "🧪 วิทยาศาสตร์"])
+
+    # รวมเมนูทั้งหมดโดยเอาปฏิทินขึ้นก่อน และตามด้วยวิชาทั้งหมดที่คุณเดฟขอมา
+    menu_selection = st.radio("เลือกเมนู:", ["📅 ปฏิทินการบ้าน"] + ALL_SUBJECTS)
 
     if st.button("🚪 ออกจากระบบ"):
         st.session_state.logged_in = False
@@ -214,7 +230,8 @@ if menu_selection == "📅 ปฏิทินการบ้าน":
         with col_d:
             due_date = st.date_input("🗓️ เลือกวัน/เดือน/ปี ที่ต้องส่ง:", min_value=datetime.today())
         with col_s:
-            subject = st.selectbox("📚 เลือกวิชา:", ["Python วิชาคอม ม.2", "คณิตศาสตร์", "วิทยาศาสตร์"])
+            # ดึงรายชื่อวิชาทั้งหมดมาใส่ในตัวเลือกปฏิทิน
+            subject = st.selectbox("📚 เลือกวิชา:", ALL_SUBJECTS)
 
         cal_title = st.text_input("📌 ตั้งชื่อหัวข้อการบ้านเอง:", placeholder="พิมพ์หัวข้อ เช่น แบบฝึกหัด1 เรื่อง abc")
 
@@ -254,9 +271,10 @@ if menu_selection == "📅 ปฏิทินการบ้าน":
                         st.rerun()
                 st.write("")
 
-# ------ 🐍 [ หน้าวิชา Python ปกติ ] ------
-elif menu_selection == "🐍 Python วิชาคอม ม.2":
-    st.title("💻 Python Learning Hub")
+# ------ 📚 [ หน้าของทุกๆ วิชาแชร์การบ้าน ] ------
+elif menu_selection in ALL_SUBJECTS:
+    st.title(f"{menu_selection}")
+    st.write(f"พื้นที่สำหรับแชร์ซอร์สโค้ด แนวทาง ใบงาน และการบ้านของวิชา {menu_selection}")
 
     with st.container():
         st.subheader("➕ แชร์แนวทางการบ้านใหม่")
@@ -264,9 +282,10 @@ elif menu_selection == "🐍 Python วิชาคอม ม.2":
         with col_t:
             new_title = st.text_input("📌 หัวข้อโพสต์ (เช่น แบบฝึกหัด1):", placeholder="พิมพ์ชื่อแบบฝึกหัดตรงนี้...")
         with col_i:
-            uploaded_file = st.file_uploader("🖼️ แนบรูปภาพประกอบ:", type=["png", "jpg", "jpeg"])
+            uploaded_file = st.file_uploader("🖼️ แนบรูปภาพประกอบ (ถ้ามี):", type=["png", "jpg", "jpeg"])
 
-        new_post = st.text_area("เนื้อหา/โค้ด Python:", height=100, placeholder="พิมพ์คำอธิบายหรือวางโค้ดลงตรงนี้...")
+        new_post = st.text_area("รายละเอียดงาน / แนวทางการทำ:", height=100,
+                                placeholder="พิมพ์คำอธิบายโจทย์ หรือ วางแนวทางคำตอบที่นี่...")
 
         if st.button("📢 โพสต์ลงกระดาน", use_container_width=True):
             if new_title.strip() != "" and (new_post.strip() != "" or uploaded_file is not None):
@@ -274,40 +293,41 @@ elif menu_selection == "🐍 Python วิชาคอม ม.2":
                 if uploaded_file is not None:
                     image_encoded = base64.b64encode(uploaded_file.read()).decode("utf-8")
 
-                if save_post_to_db(st.session_state.username, new_title, new_post, image_encoded):
-                    st.success("โพสต์เซฟลงระบบสำเร็จ!")
+                # ทำการเซฟโดยระบุ "ชื่อวิชา" กำกับลงไปด้วย
+                if save_post_to_db(menu_selection, st.session_state.username, new_title, new_post, image_encoded):
+                    st.success(f"โพสต์ลงวิชา {menu_selection} สำเร็จ!")
                     st.rerun()
             else:
                 st.warning("กรุณากรอก 'หัวข้อโพสต์' และเนื้อหาให้เรียบร้อยก่อนส่งนะจ๊ะ!")
 
     st.write("---")
 
-    st.subheader("📌 รายการการบ้านล่าสุด")
-    all_posts = load_posts_from_db()
+    st.subheader(f"📌 รายการการบ้านวิชา {menu_selection} ล่าสุด")
+    # ดึงโพสต์เฉพาะของวิชานี้ขึ้นมาโชว์
+    all_posts = load_posts_by_subject(menu_selection)
 
-    for post in all_posts:
-        with st.container():
-            author_val = post['author'] if post['author'] else "ไม่ระบุชื่อ"
-            title_val = post['title'] if post['title'] else "ไม่มีหัวข้อ"
+    if not all_posts:
+        st.info(f"📌 ยังไม่มีใครโพสต์แนวทางการบ้านของวิชานี้เลย คุณเดฟประเดิมโพสต์แรกได้นะ!")
+    else:
+        for post in all_posts:
+            with st.container():
+                author_val = post['author'] if post['author'] else "ไม่ระบุชื่อ"
+                title_val = post['title'] if post['title'] else "ไม่มีหัวข้อ"
 
-            st.markdown(f"""
-                <div class="post-card">
-                    <div class="post-title">📁 {title_val}</div>
-                    <div class="post-author">👤 โดย: {author_val}</div>
-                    <div class="post-content">{post['content']}</div>
-                </div>
-            """, unsafe_allow_html=True)
+                st.markdown(f"""
+                    <div class="post-card">
+                        <div class="post-title">📁 {title_val}</div>
+                        <div class="post-author">👤 โดย: {author_val}</div>
+                        <div class="post-content">{post['content']}</div>
+                    </div>
+                """, unsafe_allow_html=True)
 
-            if post['image']:
-                st.image(f"data:image/png;base64,{post['image']}", use_container_width=True)
+                if post['image']:
+                    st.image(f"data:image/png;base64,{post['image']}", use_container_width=True)
 
-            if st.session_state.is_admin:
-                if st.button(f"🗑️ ลบโพสต์ [{title_val}]", key=f"del_{post['id']}"):
-                    delete_post(post['id'])
-                    st.success("ลบโพสต์เรียบร้อย!")
-                    st.rerun()
-            st.write("---")
-
-else:
-    st.title(menu_selection)
-    st.info("🚧 ระบบส่วนนี้กำลังอยู่ระหว่างการพัฒนาโดย Poor_dev จ้า...")
+                if st.session_state.is_admin:
+                    if st.button(f"🗑️ ลบโพสต์ [{title_val}]", key=f"del_{post['id']}"):
+                        delete_post(post['id'])
+                        st.success("ลบโพสต์เรียบร้อย!")
+                        st.rerun()
+                st.write("---")
