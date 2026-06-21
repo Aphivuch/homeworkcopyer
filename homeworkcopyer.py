@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 import base64
+from datetime import datetime
 
 # --- 🎨 1. ตั้งค่าหน้าตาแอปให้ใหญ่พิเศษ (Extra Large GUI) ---
 st.set_page_config(page_title="HomeworkCopyer - Admin Edition", page_icon="💻", layout="wide")
@@ -20,14 +21,23 @@ st.markdown("""
         border-left: 6px solid #2ecc71;
         margin-bottom: 5px;
     }
+    .cal-card {
+        background-color: #ffffff;
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        border-left: 6px solid #e74c3c;
+        margin-bottom: 10px;
+    }
     .post-title { font-size: 24px; color: #2ecc71; font-weight: bold; margin-bottom: 5px; }
+    .cal-title { font-size: 22px; color: #e74c3c; font-weight: bold; margin-bottom: 5px; }
     .post-author { font-size: 14px; color: #7f8c8d; font-weight: bold; }
     .post-content { font-size: 18px; color: #2c3e50; margin-top: 10px; white-space: pre-wrap; }
     </style>
 """, unsafe_allow_html=True)
 
 # =======================================================
-# 🗄️ [ ระบบฐานข้อมูล SQLite - จัดการคอลัมน์ใหม่อัตโนมัติ ]
+# 🗄️ [ ระบบฐานข้อมูล SQLite ]
 # =======================================================
 DB_NAME = "homework.db"
 
@@ -35,6 +45,7 @@ DB_NAME = "homework.db"
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
+    # 1. ตารางโพสต์ปกติ
     c.execute('''
         CREATE TABLE IF NOT EXISTS posts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,8 +55,18 @@ def init_db():
             image_base64 TEXT
         )
     ''')
+    # 2. ตารางปฏิทินการบ้าน
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            due_date TEXT,
+            subject TEXT,
+            title TEXT,
+            created_by TEXT
+        )
+    ''')
 
-    # ตรวจสอบและอัปเกรดฐานข้อมูลเผื่อตารางเก่าไม่มีคอลัมน์ใหม่
+    # ตรวจสอบและอัปเกรดฐานข้อมูลโพสต์เก่า
     columns = [row[1] for row in c.execute("PRAGMA table_info(posts)")]
     if "title" not in columns:
         c.execute("ALTER TABLE posts ADD COLUMN title TEXT")
@@ -56,6 +77,7 @@ def init_db():
     conn.close()
 
 
+# --- ฟังก์ชันจัดการโพสต์ ---
 def load_posts_from_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -79,10 +101,40 @@ def save_post_to_db(author, title, content, image_encoded=None):
 
 
 def delete_post(post_id):
-    """ฟังก์ชันสำหรับ Admin ใช้ลบโพสต์"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+    conn.commit()
+    conn.close()
+
+
+# --- ฟังก์ชันจัดการปฏิทินการบ้าน ---
+def save_cal_event(due_date, subject, title, created_by):
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute("INSERT INTO calendar_events (due_date, subject, title, created_by) VALUES (?, ?, ?, ?)",
+                  (due_date, subject, title, created_by))
+        conn.commit()
+        conn.close()
+        return True
+    except:
+        return False
+
+
+def load_cal_events():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT id, due_date, subject, title, created_by FROM calendar_events ORDER BY due_date ASC")
+    rows = c.fetchall()
+    conn.close()
+    return [{"id": r[0], "due_date": r[1], "subject": r[2], "title": r[3], "created_by": r[4]} for r in rows]
+
+
+def delete_cal_event(event_id):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("DELETE FROM calendar_events WHERE id = ?", (event_id,))
     conn.commit()
     conn.close()
 
@@ -117,7 +169,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # =======================================================
-# 🗂️ 3. แถบเมนูด้านซ้าย (Sidebar) + ปุ่มล็อกอิน Admin
+# 🗂️ 3. แถบเมนูด้านซ้าย (Sidebar)
 # =======================================================
 with st.sidebar:
     st.markdown(f"### 👋 สวัสดี: **{st.session_state.username}**")
@@ -125,14 +177,16 @@ with st.sidebar:
         st.success("⭐ สถานะ: Admin (Poor_dev.)")
 
     st.write("---")
-    menu_selection = st.radio("ไปที่วิชา:", ["🐍 Python วิชาคอม ม.2", "📐 คณิตศาสตร์", "🧪 วิทยาศาสตร์"])
+    # เพิ่มเมนู ปฏิทินการบ้าน เข้าไปในตัวเลือก
+    menu_selection = st.radio("เลือกเมนู:",
+                              ["🐍 Python วิชาคอม ม.2", "📅 ปฏิทินการบ้าน", "📐 คณิตศาสตร์", "🧪 วิทยาศาสตร์"])
 
     if st.button("🚪 ออกจากระบบ"):
         st.session_state.logged_in = False
         st.session_state.is_admin = False
         st.rerun()
 
-    # --- 🔐 กล่องล็อกอิน Admin อยู่ท้ายสุดซ้ายมือ ---
+    # --- 🔐 กล่องล็อกอิน Admin ---
     st.write("---")
     with st.expander("🛠️ สำหรับ Admin ล็อกอิน"):
         adm_user = st.text_input("User:")
@@ -146,12 +200,68 @@ with st.sidebar:
                 st.error("รหัสไม่ถูกต้อง!")
 
 # =======================================================
-# 📝 4. หน้าจอหลัก
+# 📝 4. หน้าจอหลัก (เปลี่ยนตามเมนูที่กด)
 # =======================================================
-if menu_selection == "🐍 Python วิชาคอม ม.2":
+
+# ------ 📅 [ หน้าระบบปฏิทินการบ้าน ] ------
+if menu_selection == "📅 ปฏิทินการบ้าน":
+    st.title("📅 ปฏิทินแจ้งกำหนดส่งการบ้าน")
+    st.write("ระบบบันทึกและดูวันครบกำหนดส่งงานของทุกวิชา")
+
+    # ส่วนบันทึกข้อมูลการบ้านใหม่
+    with st.container():
+        st.subheader("➕ เพิ่มกำหนดส่งการบ้านใหม่")
+        col_d, col_s = st.columns([1, 1])
+        with col_d:
+            due_date = st.date_input("🗓️ เลือกวัน/เดือน/ปี ที่ต้องส่ง:", min_value=datetime.today())
+        with col_s:
+            subject = st.selectbox("📚 เลือกวิชา:", ["Python วิชาคอม ม.2", "คณิตศาสตร์", "วิทยาศาสตร์"])
+
+        cal_title = st.text_input("📌 ตั้งชื่อหัวข้อการบ้านเอง:", placeholder="พิมพ์หัวข้อ เช่น แบบฝึกหัด1 เรื่อง abc")
+
+        if st.button("💾 บันทึกลงปฏิทิน", use_container_width=True):
+            if cal_title.strip() != "":
+                if save_cal_event(str(due_date), subject, cal_title, st.session_state.username):
+                    st.success("บันทึกกำหนดส่งการบ้านเรียบร้อย!")
+                    st.rerun()
+            else:
+                st.warning("กรุณากรอกชื่อหัวข้อการบ้านด้วยนะครับคุณเดฟ!")
+
+    st.write("---")
+
+    # ส่วนแสดงผลรายการการบ้านในปฏิทิน
+    st.subheader("📋 รายการส่งการบ้านที่กำลังจะมาถึง (เรียงตามกำหนดส่ง)")
+    events = load_cal_events()
+
+    if not events:
+        st.info("🎉 ตอนนี้ยังไม่มีกำหนดส่งการบ้านใดๆ สบายใจได้!")
+    else:
+        for ev in events:
+            # แปลงวันที่ให้อ่านง่ายขึ้น
+            date_obj = datetime.strptime(ev['due_date'], "%Y-%m-%d")
+            formatted_date = date_obj.strftime("%d %B %Y")
+
+            with st.container():
+                st.markdown(f"""
+                    <div class="cal-card">
+                        <div class="cal-title">🚨 กำหนดส่ง: {formatted_date}</div>
+                        <div class="post-author">📚 วิชา: {ev['subject']} | 👤 คนบันทึก: {ev['created_by']}</div>
+                        <div class="post-content" style="font-weight: bold; color: #c0392b;">📝 งานที่ต้องส่ง: {ev['title']}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                # ถ้าเป็น Admin ให้ลบกำหนดส่งการบ้านได้
+                if st.session_state.is_admin:
+                    if st.button(f"🗑️ ลบงานนี้ [{ev['title']}]", key=f"del_ev_{ev['id']}"):
+                        delete_cal_event(ev['id'])
+                        st.success("ลบรายการออกจากปฏิทินแล้ว!")
+                        st.rerun()
+                st.write("")
+
+# ------ 🐍 [ หน้าวิชา Python ปกติ ] ------
+elif menu_selection == "🐍 Python วิชาคอม ม.2":
     st.title("💻 Python Learning Hub")
 
-    # --- ส่วนที่ 4.1: ช่องสำหรับพิมพ์โพสต์ใหม่ ---
     with st.container():
         st.subheader("➕ แชร์แนวทางการบ้านใหม่")
         col_t, col_i = st.columns([2, 1])
@@ -176,13 +286,11 @@ if menu_selection == "🐍 Python วิชาคอม ม.2":
 
     st.write("---")
 
-    # --- ส่วนที่ 4.2: ดึงข้อมูลจากฟีดมาแสดงผล ---
     st.subheader("📌 รายการการบ้านล่าสุด")
     all_posts = load_posts_from_db()
 
     for post in all_posts:
         with st.container():
-            # แสดงหัวข้อ, ชื่อผู้โพสต์ และเนื้อหา
             author_val = post['author'] if post['author'] else "ไม่ระบุชื่อ"
             title_val = post['title'] if post['title'] else "ไม่มีหัวข้อ"
 
@@ -194,11 +302,9 @@ if menu_selection == "🐍 Python วิชาคอม ม.2":
                 </div>
             """, unsafe_allow_html=True)
 
-            # (บรรทัดที่แก้บั๊ก) ตรวจเช็กและแสดงรูปภาพอย่างถูกต้องปิดวงเล็บเรียบร้อย!
             if post['image']:
                 st.image(f"data:image/png;base64,{post['image']}", use_container_width=True)
 
-            # ถ้าแอดมินล็อกอินอยู่ จะมีปุ่มลบโพสต์สีแดงโชว์ขึ้นมาให้กด
             if st.session_state.is_admin:
                 if st.button(f"🗑️ ลบโพสต์ [{title_val}]", key=f"del_{post['id']}"):
                     delete_post(post['id'])
