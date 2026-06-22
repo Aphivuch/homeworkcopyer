@@ -208,7 +208,7 @@ with st.sidebar:
         adm_user = st.text_input("User:")
         adm_pass = st.text_input("Pass:", type="password")
         if st.button("Login Admin"):
-            if adm_user == "Poor_dev." and adm_pass == "210356่js":
+            if adm_user == "Poor_dev." and adm_pass == "210356js":
                 st.session_state.is_admin = True
                 st.success("ล็อกอิน Admin สำเร็จแล้ว!")
                 st.rerun()
